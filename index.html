@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -436,7 +435,31 @@ window.addEventListener("unhandledrejection", (e) => {
 let username = null;
 let chatUnsub = null, msgUnsub = null, activeChatId = null, chatsCache = {};
 
-const saved = localStorage.getItem(STORAGE_KEY);
+function setPersisted(key, value){
+  try { localStorage.setItem(key, value); } catch(e) {}
+  try {
+    const d = new Date();
+    d.setTime(d.getTime() + 3650*24*60*60*1000);
+    document.cookie = `${key}=${encodeURIComponent(value)}; expires=${d.toUTCString()}; path=/`;
+  } catch(e) {}
+}
+function getPersisted(key){
+  try {
+    const v = localStorage.getItem(key);
+    if (v) return v;
+  } catch(e) {}
+  try {
+    const match = document.cookie.match(new RegExp("(^| )" + key + "=([^;]+)"));
+    if (match) return decodeURIComponent(match[2]);
+  } catch(e) {}
+  return null;
+}
+function clearPersisted(key){
+  try { localStorage.removeItem(key); } catch(e) {}
+  try { document.cookie = `${key}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/`; } catch(e) {}
+}
+
+const saved = getPersisted(STORAGE_KEY);
 if (saved) {
   boot(saved);
 } else {
@@ -458,7 +481,7 @@ $("entryForm").addEventListener("submit", async (e) => {
     if (!snap.exists()) {
       await setDoc(userRef, { username: raw, createdAt: serverTimestamp() });
     }
-    localStorage.setItem(STORAGE_KEY, raw);
+    setPersisted(STORAGE_KEY, raw);
     boot(raw);
   } catch (err) {
     showError(friendlyError(err));
@@ -469,7 +492,7 @@ $("entryForm").addEventListener("submit", async (e) => {
 
 $("switchUserBtn").onclick = () => {
   if (!confirm("Switch user on this device? You'll need to enter a username again.")) return;
-  localStorage.removeItem(STORAGE_KEY);
+  clearPersisted(STORAGE_KEY);
   if (chatUnsub) chatUnsub();
   if (msgUnsub) msgUnsub();
   if (requestsUnsub) requestsUnsub();
@@ -644,7 +667,7 @@ function renderSearchResults(matchingChats, foundUsers){
 
   if (foundUsers.length) {
     const label = document.createElement("div");
-    label.className = "listLabel";f
+    label.className = "listLabel";
     label.textContent = "People";
     listEl.appendChild(label);
     foundUsers.forEach(({ username: uname, state }) => {
@@ -655,4 +678,169 @@ function renderSearchResults(matchingChats, foundUsers){
         ? `<span class="reqTag">Requested</span>`
         : state === "incoming"
           ? `<span class="reqTag">Check requests</span>`
-          : `<button class="btnPrimary addFriendBtn" style="width:auto;padding:7px 14px;m
+          : `<button class="btnPrimary addFriendBtn" style="width:auto;padding:7px 14px;margin-top:0;">Add friend</button>`;
+      row.innerHTML = `
+        <div class="avatar">${initials(uname)}</div>
+        <div class="chatMeta">
+          <div class="top"><span class="name">@${uname}</span></div>
+          <div class="preview">${previewText}</div>
+        </div>
+        ${actionHtml}`;
+      if (state === "none") {
+        row.querySelector(".addFriendBtn").onclick = (e) => { e.stopPropagation(); sendFriendRequest(uname); };
+      } else if (state === "incoming") {
+        row.onclick = () => { $("searchInput").value = ""; viewMode = "requests"; renderRequestsPanel(); };
+      }
+      listEl.appendChild(row);
+    });
+  }
+
+  if (!matchingChats.length && !foundUsers.length) {
+    listEl.innerHTML = `<div class="emptyList">No matches for that username.</div>`;
+  }
+}
+
+function listenToChats(){
+  const q = query(collection(db, "chats"), where("participants", "array-contains", username));
+  chatUnsub = onSnapshot(q, (snap) => {
+    hideBanner();
+    chatsCache = {};
+    snap.forEach(d => chatsCache[d.id] = d.data());
+    renderChatList();
+  }, (err) => {
+    showBanner(friendlyError(err));
+  });
+}
+
+function otherOf(chat){
+  return chat.participants.find(p => p !== username);
+}
+
+function buildChatRow(chatId, chat){
+  const other = otherOf(chat);
+  const item = document.createElement("div");
+  item.className = "chatItem" + (chatId === activeChatId ? " active" : "");
+  const time = chat.lastMessageAt?.toDate?.() ? formatTime(chat.lastMessageAt.toDate()) : "";
+  item.innerHTML = `
+    <div class="avatar">${initials(other)}</div>
+    <div class="chatMeta">
+      <div class="top"><span class="name">@${other}</span><span class="time mono">${time}</span></div>
+      <div class="preview">${chat.lastMessage ? escapeHtml(chat.lastMessage) : "Say hi 👋"}</div>
+    </div>`;
+  item.onclick = () => openChat(chatId);
+  return item;
+}
+
+function renderChatList(){
+  const listEl = $("chatList");
+  const entries = Object.entries(chatsCache).sort((a,b) => {
+    const ta = a[1].lastMessageAt?.toMillis?.() || 0;
+    const tb = b[1].lastMessageAt?.toMillis?.() || 0;
+    return tb - ta;
+  });
+  if (!entries.length){
+    listEl.innerHTML = `<div class="emptyList">No chats yet. Search a username above to start one.</div>`;
+    return;
+  }
+  listEl.innerHTML = "";
+  entries.forEach(([chatId, chat]) => listEl.appendChild(buildChatRow(chatId, chat)));
+}
+
+function formatTime(d){
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return d.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+  return d.toLocaleDateString([], { month:"short", day:"numeric" });
+}
+
+function openChat(chatId){
+  activeChatId = chatId;
+  $("searchInput").value = "";
+  renderChatList();
+  const chat = chatsCache[chatId];
+  const other = otherOf(chat);
+  const pane = $("chatPane");
+  pane.classList.remove("empty");
+  pane.innerHTML = `
+    <div class="chatHead">
+      <button class="iconBtn backBtn" id="backBtn">←</button>
+      <div class="avatar">${initials(other)}</div>
+      <div>
+        <div class="name">@${other}</div>
+        <div class="sub">HitUp chat</div>
+      </div>
+    </div>
+    <div class="messages" id="messagesEl"></div>
+    <form class="composer" id="composerForm">
+      <input id="messageInput" placeholder="Type a message" autocomplete="off">
+      <button class="sendBtn" type="submit">➤</button>
+    </form>`;
+  $("backBtn").onclick = () => {
+    $("sidebar").classList.remove("hideOnMobile");
+    pane.classList.remove("show");
+  };
+  $("sidebar").classList.add("hideOnMobile");
+  pane.classList.add("show");
+
+  const draft = localStorage.getItem("hitup_draft_" + chatId);
+  if (draft) $("messageInput").value = draft;
+  $("messageInput").addEventListener("input", (e) => {
+    localStorage.setItem("hitup_draft_" + chatId, e.target.value);
+  });
+
+  $("composerForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = $("messageInput");
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    localStorage.removeItem("hitup_draft_" + chatId);
+    try {
+      await addDoc(collection(db, "chats", chatId, "messages"), {
+        text, senderId: username, status: "sent", createdAt: serverTimestamp()
+      });
+      await updateDoc(doc(db, "chats", chatId), {
+        lastMessage: text, lastMessageAt: serverTimestamp()
+      });
+    } catch (err) {
+      showBanner(friendlyError(err));
+      input.value = text;
+    }
+  });
+
+  if (msgUnsub) msgUnsub();
+  const mq = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt"));
+  msgUnsub = onSnapshot(mq, (snap) => {
+    const el = $("messagesEl");
+    if (!el) return;
+    el.innerHTML = "";
+    let lastDay = null;
+    snap.forEach(d => {
+      const m = d.data();
+      const created = m.createdAt?.toDate?.() || new Date();
+      const dayKey = created.toDateString();
+      if (dayKey !== lastDay){
+        const split = document.createElement("div");
+        split.className = "daySplit";
+        split.textContent = created.toDateString() === new Date().toDateString() ? "Today" : created.toLocaleDateString([], { month:"long", day:"numeric" });
+        el.appendChild(split);
+        lastDay = dayKey;
+      }
+      const out = m.senderId === username;
+      const bubble = document.createElement("div");
+      bubble.className = "bubble " + (out ? "out" : "in");
+      const tick = out ? `<span class="tick ${m.status === "seen" ? "seen" : ""} mono">${m.status === "seen" ? "✓✓" : "✓"}</span>` : "";
+      bubble.innerHTML = `${escapeHtml(m.text)}<div class="meta"><span class="mono">${formatTime(created)}</span>${tick}</div>`;
+      el.appendChild(bubble);
+      if (!out && m.status !== "seen"){
+        updateDoc(doc(db, "chats", chatId, "messages", d.id), { status: "seen" });
+      }
+    });
+    el.scrollTop = el.scrollHeight;
+  }, (err) => {
+    showBanner(friendlyError(err));
+  });
+}
+</script>
+</body>
+</html>
