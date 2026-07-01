@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -198,6 +199,26 @@
     color:var(--muted);
   }
   .foundRow .chatMeta .preview{color:var(--orange);}
+  .reqTag{
+    font-size:11.5px;
+    color:var(--muted);
+    white-space:nowrap;
+    flex-shrink:0;
+  }
+  .badge{
+    display:none;
+    position:absolute;
+    top:-4px;right:-4px;
+    min-width:16px;height:16px;
+    border-radius:50%;
+    background:var(--orange);
+    color:var(--white);
+    font-size:10px;
+    font-weight:600;
+    align-items:center;
+    justify-content:center;
+    padding:0 3px;
+  }
   #syncBanner{
     display:none;
     position:fixed;
@@ -341,6 +362,9 @@
           </div>
         </div>
         <div style="display:flex;gap:8px;">
+          <button class="iconBtn" id="requestsBtn" title="Friend requests" style="position:relative;">
+            🔔<span class="badge" id="reqBadge"></span>
+          </button>
           <button class="iconBtn" id="switchUserBtn" title="Not you? Switch user">⏻</button>
         </div>
       </div>
@@ -448,6 +472,7 @@ $("switchUserBtn").onclick = () => {
   localStorage.removeItem(STORAGE_KEY);
   if (chatUnsub) chatUnsub();
   if (msgUnsub) msgUnsub();
+  if (requestsUnsub) requestsUnsub();
   username = null; activeChatId = null;
   appView.style.display = "none";
   entryView.style.display = "flex";
@@ -461,6 +486,7 @@ function boot(uname){
   $("myUsername").textContent = "@" + username;
   $("myAvatar").textContent = initials(username);
   listenToChats();
+  listenToRequests();
 }
 
 function showBanner(msg){
@@ -470,23 +496,101 @@ function showBanner(msg){
 }
 function hideBanner(){ $("syncBanner").style.display = "none"; }
 
-async function startChatWithUser(uname){
-  if (uname === username) { alert("That's you."); return; }
+let viewMode = "chats";
+let incomingRequests = {};
+let requestsUnsub = null;
+
+function listenToRequests(){
+  const q = query(collection(db, "friendRequests"), where("to", "==", username), where("status", "==", "pending"));
+  requestsUnsub = onSnapshot(q, (snap) => {
+    incomingRequests = {};
+    snap.forEach(d => incomingRequests[d.id] = d.data());
+    updateReqBadge();
+    if (viewMode === "requests") renderRequestsPanel();
+  }, (err) => showBanner(friendlyError(err)));
+}
+
+function updateReqBadge(){
+  const count = Object.keys(incomingRequests).length;
+  const badge = $("reqBadge");
+  if (count > 0) { badge.textContent = count > 9 ? "9+" : count; badge.style.display = "flex"; }
+  else badge.style.display = "none";
+}
+
+$("requestsBtn").onclick = () => {
+  viewMode = viewMode === "requests" ? "chats" : "requests";
+  $("searchInput").value = "";
+  if (viewMode === "requests") renderRequestsPanel();
+  else renderChatList();
+};
+
+function renderRequestsPanel(){
+  const listEl = $("chatList");
+  listEl.innerHTML = "";
+  const label = document.createElement("div");
+  label.className = "listLabel";
+  label.textContent = "Friend requests";
+  listEl.appendChild(label);
+  const entries = Object.entries(incomingRequests);
+  if (!entries.length){
+    listEl.innerHTML += `<div class="emptyList">No pending requests.</div>`;
+    return;
+  }
+  entries.forEach(([id, req]) => {
+    const row = document.createElement("div");
+    row.className = "chatItem";
+    row.innerHTML = `
+      <div class="avatar">${initials(req.from)}</div>
+      <div class="chatMeta">
+        <div class="top"><span class="name">@${req.from}</span></div>
+        <div class="preview">wants to chat with you</div>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="iconBtn acceptBtn" title="Accept">✓</button>
+        <button class="iconBtn declineBtn" title="Decline">✕</button>
+      </div>`;
+    row.querySelector(".acceptBtn").onclick = (e) => { e.stopPropagation(); respondToRequest(id, req, true); };
+    row.querySelector(".declineBtn").onclick = (e) => { e.stopPropagation(); respondToRequest(id, req, false); };
+    listEl.appendChild(row);
+  });
+}
+
+async function respondToRequest(id, req, accepted){
   try {
-    const chatId = [username, uname].sort().join("_");
-    const chatRef = doc(db, "chats", chatId);
-    const existing = await getDoc(chatRef);
-    if (!existing.exists()) {
-      await setDoc(chatRef, {
-        participants: [username, uname],
+    if (accepted) {
+      const chatId = [req.from, req.to].sort().join("_");
+      await setDoc(doc(db, "chats", chatId), {
+        participants: [req.from, req.to],
         lastMessage: "", lastMessageAt: serverTimestamp(), createdAt: serverTimestamp()
       });
+      await updateDoc(doc(db, "friendRequests", id), { status: "accepted" });
+      viewMode = "chats";
+      renderChatList();
+    } else {
+      await updateDoc(doc(db, "friendRequests", id), { status: "declined" });
     }
-    $("searchInput").value = "";
-    openChat(chatId);
   } catch (err) {
     showBanner(friendlyError(err));
   }
+}
+
+async function sendFriendRequest(uname){
+  try {
+    await setDoc(doc(db, "friendRequests", `${username}_${uname}`), {
+      from: username, to: uname, status: "pending", createdAt: serverTimestamp()
+    });
+    runSearch();
+  } catch (err) {
+    showBanner(friendlyError(err));
+  }
+}
+
+async function getFriendState(uname){
+  const sentSnap = await getDoc(doc(db, "friendRequests", `${username}_${uname}`));
+  if (sentSnap.exists() && sentSnap.data().status === "pending") return "sent";
+  const incomingSnap = await getDoc(doc(db, "friendRequests", `${uname}_${username}`));
+  if (incomingSnap.exists() && incomingSnap.data().status === "pending") return "incoming";
+  return "none";
 }
 
 let searchDebounce = null;
@@ -497,7 +601,8 @@ $("searchInput").addEventListener("input", () => {
 
 async function runSearch(){
   const q = $("searchInput").value.trim().toLowerCase();
-  if (!q) { renderChatList(); return; }
+  if (!q) { viewMode = "chats"; renderChatList(); return; }
+  viewMode = "search";
 
   const matchingChats = Object.entries(chatsCache).filter(([id, chat]) => otherOf(chat).includes(q));
 
@@ -507,13 +612,17 @@ async function runSearch(){
     const uq = query(usersRef, orderBy("username"), where("username", ">=", q), where("username", "<=", q + "\uf8ff"));
     try {
       const snap = await getDocs(uq);
-      snap.forEach(d => {
+      for (const d of snap.docs) {
         const uname = d.data().username;
-        if (uname === username) return;
+        if (uname === username) continue;
         const chatId = [username, uname].sort().join("_");
-        if (!chatsCache[chatId]) foundUsers.push(uname);
-      });
-    } catch (e) {}
+        if (chatsCache[chatId]) continue;
+        const state = await getFriendState(uname);
+        foundUsers.push({ username: uname, state });
+      }
+    } catch (e) {
+      showBanner(friendlyError(e));
+    }
   }
 
   renderSearchResults(matchingChats, foundUsers);
@@ -535,169 +644,15 @@ function renderSearchResults(matchingChats, foundUsers){
 
   if (foundUsers.length) {
     const label = document.createElement("div");
-    label.className = "listLabel";
-    label.textContent = "Start a new chat";
+    label.className = "listLabel";f
+    label.textContent = "People";
     listEl.appendChild(label);
-    foundUsers.forEach(uname => {
+    foundUsers.forEach(({ username: uname, state }) => {
       const row = document.createElement("div");
       row.className = "chatItem foundRow";
-      row.innerHTML = `
-        <div class="avatar">${initials(uname)}</div>
-        <div class="chatMeta">
-          <div class="top"><span class="name">@${uname}</span></div>
-          <div class="preview">Tap to start chatting</div>
-        </div>`;
-      row.onclick = () => startChatWithUser(uname);
-      listEl.appendChild(row);
-    });
-  }
-
-  if (!matchingChats.length && !foundUsers.length) {
-    listEl.innerHTML = `<div class="emptyList">No matches for that username.</div>`;
-  }
-}
-
-function listenToChats(){
-  const q = query(collection(db, "chats"), where("participants", "array-contains", username));
-  chatUnsub = onSnapshot(q, (snap) => {
-    hideBanner();
-    chatsCache = {};
-    snap.forEach(d => chatsCache[d.id] = d.data());
-    renderChatList();
-  }, (err) => {
-    showBanner(friendlyError(err));
-  });
-}
-
-function otherOf(chat){
-  return chat.participants.find(p => p !== username);
-}
-
-function buildChatRow(chatId, chat){
-  const other = otherOf(chat);
-  const item = document.createElement("div");
-  item.className = "chatItem" + (chatId === activeChatId ? " active" : "");
-  const time = chat.lastMessageAt?.toDate?.() ? formatTime(chat.lastMessageAt.toDate()) : "";
-  item.innerHTML = `
-    <div class="avatar">${initials(other)}</div>
-    <div class="chatMeta">
-      <div class="top"><span class="name">@${other}</span><span class="time mono">${time}</span></div>
-      <div class="preview">${chat.lastMessage ? escapeHtml(chat.lastMessage) : "Say hi 👋"}</div>
-    </div>`;
-  item.onclick = () => openChat(chatId);
-  return item;
-}
-
-function renderChatList(){
-  const listEl = $("chatList");
-  const entries = Object.entries(chatsCache).sort((a,b) => {
-    const ta = a[1].lastMessageAt?.toMillis?.() || 0;
-    const tb = b[1].lastMessageAt?.toMillis?.() || 0;
-    return tb - ta;
-  });
-  if (!entries.length){
-    listEl.innerHTML = `<div class="emptyList">No chats yet. Search a username above to start one.</div>`;
-    return;
-  }
-  listEl.innerHTML = "";
-  entries.forEach(([chatId, chat]) => listEl.appendChild(buildChatRow(chatId, chat)));
-}
-
-function formatTime(d){
-  const now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
-  if (sameDay) return d.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
-  return d.toLocaleDateString([], { month:"short", day:"numeric" });
-}
-
-function openChat(chatId){
-  activeChatId = chatId;
-  $("searchInput").value = "";
-  renderChatList();
-  const chat = chatsCache[chatId];
-  const other = otherOf(chat);
-  const pane = $("chatPane");
-  pane.classList.remove("empty");
-  pane.innerHTML = `
-    <div class="chatHead">
-      <button class="iconBtn backBtn" id="backBtn">←</button>
-      <div class="avatar">${initials(other)}</div>
-      <div>
-        <div class="name">@${other}</div>
-        <div class="sub">HitUp chat</div>
-      </div>
-    </div>
-    <div class="messages" id="messagesEl"></div>
-    <form class="composer" id="composerForm">
-      <input id="messageInput" placeholder="Type a message" autocomplete="off">
-      <button class="sendBtn" type="submit">➤</button>
-    </form>`;
-  $("backBtn").onclick = () => {
-    $("sidebar").classList.remove("hideOnMobile");
-    pane.classList.remove("show");
-  };
-  $("sidebar").classList.add("hideOnMobile");
-  pane.classList.add("show");
-
-  const draft = localStorage.getItem("hitup_draft_" + chatId);
-  if (draft) $("messageInput").value = draft;
-  $("messageInput").addEventListener("input", (e) => {
-    localStorage.setItem("hitup_draft_" + chatId, e.target.value);
-  });
-
-  $("composerForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const input = $("messageInput");
-    const text = input.value.trim();
-    if (!text) return;
-    input.value = "";
-    localStorage.removeItem("hitup_draft_" + chatId);
-    try {
-      await addDoc(collection(db, "chats", chatId, "messages"), {
-        text, senderId: username, status: "sent", createdAt: serverTimestamp()
-      });
-      await updateDoc(doc(db, "chats", chatId), {
-        lastMessage: text, lastMessageAt: serverTimestamp()
-      });
-    } catch (err) {
-      showBanner(friendlyError(err));
-      input.value = text;
-    }
-  });
-
-  if (msgUnsub) msgUnsub();
-  const mq = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt"));
-  msgUnsub = onSnapshot(mq, (snap) => {
-    const el = $("messagesEl");
-    if (!el) return;
-    el.innerHTML = "";
-    let lastDay = null;
-    snap.forEach(d => {
-      const m = d.data();
-      const created = m.createdAt?.toDate?.() || new Date();
-      const dayKey = created.toDateString();
-      if (dayKey !== lastDay){
-        const split = document.createElement("div");
-        split.className = "daySplit";
-        split.textContent = created.toDateString() === new Date().toDateString() ? "Today" : created.toLocaleDateString([], { month:"long", day:"numeric" });
-        el.appendChild(split);
-        lastDay = dayKey;
-      }
-      const out = m.senderId === username;
-      const bubble = document.createElement("div");
-      bubble.className = "bubble " + (out ? "out" : "in");
-      const tick = out ? `<span class="tick ${m.status === "seen" ? "seen" : ""} mono">${m.status === "seen" ? "✓✓" : "✓"}</span>` : "";
-      bubble.innerHTML = `${escapeHtml(m.text)}<div class="meta"><span class="mono">${formatTime(created)}</span>${tick}</div>`;
-      el.appendChild(bubble);
-      if (!out && m.status !== "seen"){
-        updateDoc(doc(db, "chats", chatId, "messages", d.id), { status: "seen" });
-      }
-    });
-    el.scrollTop = el.scrollHeight;
-  }, (err) => {
-    showBanner(friendlyError(err));
-  });
-}
-</script>
-</body>
-</html>
+      const previewText = state === "sent" ? "Waiting for approval" : state === "incoming" ? "Sent you a request" : "Not connected yet";
+      const actionHtml = state === "sent"
+        ? `<span class="reqTag">Requested</span>`
+        : state === "incoming"
+          ? `<span class="reqTag">Check requests</span>`
+          : `<button class="btnPrimary addFriendBtn" style="width:auto;padding:7px 14px;m
