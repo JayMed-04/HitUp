@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HitUp</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --white:#FFFFFF;
+    --surface:#FFF8F3;
+    --orange:#FF6B1A;
+    --orange-deep:#E85D0A;
+    --ink:#1F1B18;
+    --muted:#8A7F78;
+    --bubble-in:#F3EDE7;
+    --line:#EFE6DD;
+    --seen:#3AA0FF;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    font-family:'Inter',sans-serif;
+    color:var(--ink);
+    background:var(--surface);
+    height:100vh;
+    overflow:hidden;
+  }
+  .mono{font-family:'DM Mono',monospace;}
+  .brand{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    letter-spacing:-0.02em;
+  }
+  .mark{
+    width:34px;height:34px;
+    border-radius:10px;
+    background:var(--orange);
+    display:flex;align-items:center;justify-content:center;
+    position:relative;
+    flex-shrink:0;
+  }
+  .mark::after{
+    content:"";
+    position:absolute;
+    right:-3px;bottom:-3px;
+    width:10px;height:10px;
+    border-radius:50%;
+    background:var(--ink);
+    border:2px solid var(--surface);
+  }
+  .mark span{
+    color:var(--white);
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:17px;
+  }
+
+  #entryView{
+    height:100%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+  }
+  .entryCard{
+    width:100%;
+    max-width:380px;
+    background:var(--white);
+    border:1px solid var(--line);
+    border-radius:20px;
+    padding:36px 32px;
+  }
+  .entryHead{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+  .entryHead h1{font-size:22px;}
+  .entrySub{font-size:13.5px;color:var(--muted);margin-bottom:26px;line-height:1.5;}
+  .field{margin-bottom:14px;}
+  .field label{
+    display:block;
+    font-size:12px;
+    color:var(--muted);
+    margin-bottom:6px;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+  }
+  input{
+    width:100%;
+    padding:12px 13px;
+    border:1px solid var(--line);
+    border-radius:10px;
+    font-size:14.5px;
+    font-family:'Inter',sans-serif;
+    background:var(--surface);
+    color:var(--ink);
+    outline:none;
+  }
+  input:focus{border-color:var(--orange);}
+  .btnPrimary{
+    width:100%;
+    padding:12px;
+    border:none;
+    border-radius:10px;
+    background:var(--orange);
+    color:var(--white);
+    font-weight:600;
+    font-size:14px;
+    cursor:pointer;
+    margin-top:6px;
+  }
+  .btnPrimary:hover{background:var(--orange-deep);}
+  .btnPrimary:disabled{opacity:.5;cursor:default;}
+  .entryError{
+    background:#FFF1EA;
+    border:1px solid #FFD8BF;
+    color:var(--orange-deep);
+    font-size:13px;
+    padding:9px 12px;
+    border-radius:8px;
+    margin-bottom:14px;
+    display:none;
+  }
+
+  #appView{display:none;height:100%;}
+  .shell{
+    display:grid;
+    grid-template-columns:340px 1fr;
+    height:100%;
+  }
+  .sidebar{
+    background:var(--white);
+    border-right:1px solid var(--line);
+    display:flex;
+    flex-direction:column;
+    min-width:0;
+  }
+  .sideHead{
+    padding:16px 18px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    border-bottom:1px solid var(--line);
+  }
+  .sideHead .who{display:flex;align-items:center;gap:10px;}
+  .avatar{
+    width:38px;height:38px;
+    border-radius:50%;
+    background:var(--orange);
+    color:var(--white);
+    display:flex;align-items:center;justify-content:center;
+    font-weight:600;
+    font-size:14px;
+    flex-shrink:0;
+  }
+  .iconBtn{
+    width:34px;height:34px;
+    border-radius:9px;
+    border:1px solid var(--line);
+    background:var(--surface);
+    color:var(--ink);
+    cursor:pointer;
+    font-size:15px;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .iconBtn:hover{border-color:var(--orange);color:var(--orange);}
+  .searchWrap{padding:12px 16px;}
+  .searchWrap input{background:var(--surface);}
+  .newChatBar{
+    display:none;
+    padding:0 16px 12px;
+    gap:8px;
+  }
+  .newChatBar.show{display:flex;}
+  .chatList{flex:1;overflow-y:auto;}
+  .chatItem{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:12px 16px;
+    cursor:pointer;
+    border-bottom:1px solid var(--line);
+  }
+  .chatItem:hover,.chatItem.active{background:var(--surface);}
+  .chatMeta{flex:1;min-width:0;}
+  .chatMeta .top{display:flex;justify-content:space-between;align-items:baseline;}
+  .chatMeta .name{font-weight:600;font-size:14.5px;}
+  .chatMeta .time{font-size:11px;color:var(--muted);}
+  .chatMeta .preview{
+    font-size:13px;color:var(--muted);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .emptyList{padding:28px 16px;color:var(--muted);font-size:13px;text-align:center;}
+  .listLabel{
+    padding:10px 16px 4px;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    color:var(--muted);
+  }
+  .foundRow .chatMeta .preview{color:var(--orange);}
+  #syncBanner{
+    display:none;
+    position:fixed;
+    top:0;left:0;right:0;
+    z-index:50;
+    background:var(--orange-deep);
+    color:var(--white);
+    font-size:13px;
+    padding:10px 16px;
+    text-align:center;
+  }
+
+  .chatPane{display:flex;flex-direction:column;min-width:0;background:var(--surface);}
+  .chatPane.empty{align-items:center;justify-content:center;}
+  .emptyState{text-align:center;color:var(--muted);}
+  .emptyState .mark{margin:0 auto 14px;width:52px;height:52px;border-radius:16px;}
+  .emptyState .mark span{font-size:24px;}
+  .chatHead{
+    padding:14px 20px;
+    background:var(--white);
+    border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:12px;
+  }
+  .chatHead .name{font-weight:600;font-size:15px;}
+  .chatHead .sub{font-size:12px;color:var(--muted);}
+  .messages{
+    flex:1;
+    overflow-y:auto;
+    padding:20px 26px;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .bubble{
+    max-width:60%;
+    padding:9px 13px;
+    border-radius:14px;
+    font-size:14.5px;
+    line-height:1.4;
+    position:relative;
+    word-wrap:break-word;
+  }
+  .bubble.out{
+    align-self:flex-end;
+    background:var(--orange);
+    color:var(--white);
+    border-bottom-right-radius:4px;
+  }
+  .bubble.in{
+    align-self:flex-start;
+    background:var(--bubble-in);
+    color:var(--ink);
+    border-bottom-left-radius:4px;
+  }
+  .bubble .meta{
+    display:flex;gap:5px;align-items:center;
+    justify-content:flex-end;
+    font-size:10px;
+    margin-top:3px;
+    opacity:.75;
+  }
+  .bubble.out .meta{color:rgba(255,255,255,.85);}
+  .bubble.in .meta{color:var(--muted);}
+  .tick.seen{color:var(--seen);}
+  .composer{
+    display:flex;
+    gap:10px;
+    padding:14px 20px;
+    background:var(--white);
+    border-top:1px solid var(--line);
+  }
+  .composer input{
+    flex:1;
+    background:var(--surface);
+    border-radius:22px;
+    padding:12px 16px;
+  }
+  .sendBtn{
+    width:44px;height:44px;
+    border-radius:50%;
+    border:none;
+    background:var(--orange);
+    color:var(--white);
+    cursor:pointer;
+    font-size:16px;
+    flex-shrink:0;
+  }
+  .sendBtn:hover{background:var(--orange-deep);}
+  .daySplit{
+    align-self:center;
+    font-size:11px;
+    color:var(--muted);
+    background:var(--white);
+    border:1px solid var(--line);
+    padding:3px 10px;
+    border-radius:20px;
+    margin:8px 0;
+  }
+
+  @media (max-width:760px){
+    .shell{grid-template-columns:1fr;}
+    .sidebar{display:flex;}
+    .sidebar.hideOnMobile{display:none;}
+    .chatPane{display:none;}
+    .chatPane.show{display:flex;}
+    .backBtn{display:inline-flex !important;}
+  }
+  .backBtn{display:none;}
+  ::-webkit-scrollbar{width:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px;}
+</style>
+</head>
+<body>
+
+<div id="syncBanner"></div>
+
+<div id="entryView">
+  <div class="entryCard">
+    <div class="entryHead">
+      <div class="mark"><span>H</span></div>
+      <h1 class="brand">HitUp</h1>
+    </div>
+    <div class="entrySub">Pick a username to get started. This device will remember it next time.</div>
+    <div class="entryError" id="entryError"></div>
+    <form id="entryForm">
+      <div class="field"><label>Username</label><input id="entryUsername" placeholder="e.g. blaqmoha" required></div>
+      <button class="btnPrimary" type="submit" id="entryBtn">Continue</button>
+    </form>
+  </div>
+</div>
+
+<div id="appView">
+  <div class="shell">
+    <div class="sidebar" id="sidebar">
+      <div class="sideHead">
+        <div class="who">
+          <div class="avatar" id="myAvatar">?</div>
+          <div>
+            <div style="font-weight:600;font-size:14px;" id="myUsername">—</div>
+            <div style="font-size:11.5px;color:var(--muted);">on this device</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="iconBtn" id="switchUserBtn" title="Not you? Switch user">⏻</button>
+        </div>
+      </div>
+      <div class="searchWrap">
+        <input id="searchInput" placeholder="Search or start a chat by username">
+      </div>
+      <div class="chatList" id="chatList">
+        <div class="emptyList">No chats yet. Search a username above to start one.</div>
+      </div>
+    </div>
+
+    <div class="chatPane empty" id="chatPane">
+      <div class="emptyState">
+        <div class="mark"><span>H</span></div>
+        <div class="brand" style="font-size:18px;margin-bottom:4px;">HitUp</div>
+        <div>Select a chat or start a new one.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore, doc, setDoc, getDoc, getDocs, collection, query, where,
+  onSnapshot, addDoc, serverTimestamp, orderBy, updateDoc,
+  enableIndexedDbPersistence
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyByVAqHsykcCS7KiqnnNL2tuZ3gSsdJ9NQ",
+  authDomain: "hitup-fa633.firebaseapp.com",
+  projectId: "hitup-fa633",
+  storageBucket: "hitup-fa633.firebasestorage.app",
+  messagingSenderId: "209437276676",
+  appId: "1:209437276676:web:1925f6a708e738e7a71351",
+  measurementId: "G-GYWZLS9J50"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+try { await enableIndexedDbPersistence(db); } catch (e) {}
+
+const $ = (id) => document.getElementById(id);
+const STORAGE_KEY = "hitup_username";
+
+const entryView = $("entryView"), appView = $("appView");
+const entryError = $("entryError");
+function hideError(){ entryError.style.display="none"; entryError.textContent=""; }
+function showError(msg){ entryError.textContent = msg; entryError.style.display="block"; }
+function initials(name){ return (name?.[0] || "?").toUpperCase(); }
+function escapeHtml(s){ const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+function friendlyError(err){
+  const msg = err?.message || String(err);
+  if (msg.includes("permission-denied") || msg.includes("Missing or insufficient permissions")) {
+    return "HitUp can't reach the database yet. In the Firebase console, open Firestore Database → Rules and allow read/write access, then Publish.";
+  }
+  if (msg.includes("unavailable") || msg.includes("Failed to get document") || msg.includes("network")) {
+    return "Can't connect right now. Check your internet connection and try again.";
+  }
+  return msg;
+}
+
+window.addEventListener("unhandledrejection", (e) => {
+  console.error("HitUp error:", e.reason);
+});
+
+let username = null;
+let chatUnsub = null, msgUnsub = null, activeChatId = null, chatsCache = {};
+
+const saved = localStorage.getItem(STORAGE_KEY);
+if (saved) {
+  boot(saved);
+} else {
+  entryView.style.display = "flex";
+  appView.style.display = "none";
+}
+
+$("entryForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  hideError();
+  const btn = $("entryBtn"); btn.disabled = true; btn.textContent = "Continuing...";
+  try {
+    const raw = $("entryUsername").value.trim().toLowerCase();
+    if (!/^[a-z0-9_.]{3,20}$/.test(raw)) {
+      throw new Error("Username must be 3-20 characters: letters, numbers, dot or underscore.");
+    }
+    const userRef = doc(db, "users", raw);
+    const snap = await getDoc(userRef);
+    if (!snap.exists()) {
+      await setDoc(userRef, { username: raw, createdAt: serverTimestamp() });
+    }
+    localStorage.setItem(STORAGE_KEY, raw);
+    boot(raw);
+  } catch (err) {
+    showError(friendlyError(err));
+  } finally {
+    btn.disabled = false; btn.textContent = "Continue";
+  }
+});
+
+$("switchUserBtn").onclick = () => {
+  if (!confirm("Switch user on this device? You'll need to enter a username again.")) return;
+  localStorage.removeItem(STORAGE_KEY);
+  if (chatUnsub) chatUnsub();
+  if (msgUnsub) msgUnsub();
+  username = null; activeChatId = null;
+  appView.style.display = "none";
+  entryView.style.display = "flex";
+  $("entryUsername").value = "";
+};
+
+function boot(uname){
+  username = uname;
+  entryView.style.display = "none";
+  appView.style.display = "block";
+  $("myUsername").textContent = "@" + username;
+  $("myAvatar").textContent = initials(username);
+  listenToChats();
+}
+
+function showBanner(msg){
+  const b = $("syncBanner");
+  b.textContent = msg;
+  b.style.display = "block";
+}
+function hideBanner(){ $("syncBanner").style.display = "none"; }
+
+async function startChatWithUser(uname){
+  if (uname === username) { alert("That's you."); return; }
+  try {
+    const chatId = [username, uname].sort().join("_");
+    const chatRef = doc(db, "chats", chatId);
+    const existing = await getDoc(chatRef);
+    if (!existing.exists()) {
+      await setDoc(chatRef, {
+        participants: [username, uname],
+        lastMessage: "", lastMessageAt: serverTimestamp(), createdAt: serverTimestamp()
+      });
+    }
+    $("searchInput").value = "";
+    openChat(chatId);
+  } catch (err) {
+    showBanner(friendlyError(err));
+  }
+}
+
+let searchDebounce = null;
+$("searchInput").addEventListener("input", () => {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(runSearch, 220);
+});
+
+async function runSearch(){
+  const q = $("searchInput").value.trim().toLowerCase();
+  if (!q) { renderChatList(); return; }
+
+  const matchingChats = Object.entries(chatsCache).filter(([id, chat]) => otherOf(chat).includes(q));
+
+  let foundUsers = [];
+  if (/^[a-z0-9_.]{1,20}$/.test(q)) {
+    const usersRef = collection(db, "users");
+    const uq = query(usersRef, orderBy("username"), where("username", ">=", q), where("username", "<=", q + "\uf8ff"));
+    try {
+      const snap = await getDocs(uq);
+      snap.forEach(d => {
+        const uname = d.data().username;
+        if (uname === username) return;
+        const chatId = [username, uname].sort().join("_");
+        if (!chatsCache[chatId]) foundUsers.push(uname);
+      });
+    } catch (e) {}
+  }
+
+  renderSearchResults(matchingChats, foundUsers);
+}
+
+function renderSearchResults(matchingChats, foundUsers){
+  const listEl = $("chatList");
+  listEl.innerHTML = "";
+
+  if (matchingChats.length) {
+    const label = document.createElement("div");
+    label.className = "listLabel";
+    label.textContent = "Chats";
+    listEl.appendChild(label);
+    matchingChats
+      .sort((a,b) => (b[1].lastMessageAt?.toMillis?.()||0) - (a[1].lastMessageAt?.toMillis?.()||0))
+      .forEach(([chatId, chat]) => listEl.appendChild(buildChatRow(chatId, chat)));
+  }
+
+  if (foundUsers.length) {
+    const label = document.createElement("div");
+    label.className = "listLabel";
+    label.textContent = "Start a new chat";
+    listEl.appendChild(label);
+    foundUsers.forEach(uname => {
+      const row = document.createElement("div");
+      row.className = "chatItem foundRow";
+      row.innerHTML = `
+        <div class="avatar">${initials(uname)}</div>
+        <div class="chatMeta">
+          <div class="top"><span class="name">@${uname}</span></div>
+          <div class="preview">Tap to start chatting</div>
+        </div>`;
+      row.onclick = () => startChatWithUser(uname);
+      listEl.appendChild(row);
+    });
+  }
+
+  if (!matchingChats.length && !foundUsers.length) {
+    listEl.innerHTML = `<div class="emptyList">No matches for that username.</div>`;
+  }
+}
+
+function listenToChats(){
+  const q = query(collection(db, "chats"), where("participants", "array-contains", username));
+  chatUnsub = onSnapshot(q, (snap) => {
+    hideBanner();
+    chatsCache = {};
+    snap.forEach(d => chatsCache[d.id] = d.data());
+    renderChatList();
+  }, (err) => {
+    showBanner(friendlyError(err));
+  });
+}
+
+function otherOf(chat){
+  return chat.participants.find(p => p !== username);
+}
+
+function buildChatRow(chatId, chat){
+  const other = otherOf(chat);
+  const item = document.createElement("div");
+  item.className = "chatItem" + (chatId === activeChatId ? " active" : "");
+  const time = chat.lastMessageAt?.toDate?.() ? formatTime(chat.lastMessageAt.toDate()) : "";
+  item.innerHTML = `
+    <div class="avatar">${initials(other)}</div>
+    <div class="chatMeta">
+      <div class="top"><span class="name">@${other}</span><span class="time mono">${time}</span></div>
+      <div class="preview">${chat.lastMessage ? escapeHtml(chat.lastMessage) : "Say hi 👋"}</div>
+    </div>`;
+  item.onclick = () => openChat(chatId);
+  return item;
+}
+
+function renderChatList(){
+  const listEl = $("chatList");
+  const entries = Object.entries(chatsCache).sort((a,b) => {
+    const ta = a[1].lastMessageAt?.toMillis?.() || 0;
+    const tb = b[1].lastMessageAt?.toMillis?.() || 0;
+    return tb - ta;
+  });
+  if (!entries.length){
+    listEl.innerHTML = `<div class="emptyList">No chats yet. Search a username above to start one.</div>`;
+    return;
+  }
+  listEl.innerHTML = "";
+  entries.forEach(([chatId, chat]) => listEl.appendChild(buildChatRow(chatId, chat)));
+}
+
+function formatTime(d){
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return d.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+  return d.toLocaleDateString([], { month:"short", day:"numeric" });
+}
+
+function openChat(chatId){
+  activeChatId = chatId;
+  $("searchInput").value = "";
+  renderChatList();
+  const chat = chatsCache[chatId];
+  const other = otherOf(chat);
+  const pane = $("chatPane");
+  pane.classList.remove("empty");
+  pane.innerHTML = `
+    <div class="chatHead">
+      <button class="iconBtn backBtn" id="backBtn">←</button>
+      <div class="avatar">${initials(other)}</div>
+      <div>
+        <div class="name">@${other}</div>
+        <div class="sub">HitUp chat</div>
+      </div>
+    </div>
+    <div class="messages" id="messagesEl"></div>
+    <form class="composer" id="composerForm">
+      <input id="messageInput" placeholder="Type a message" autocomplete="off">
+      <button class="sendBtn" type="submit">➤</button>
+    </form>`;
+  $("backBtn").onclick = () => {
+    $("sidebar").classList.remove("hideOnMobile");
+    pane.classList.remove("show");
+  };
+  $("sidebar").classList.add("hideOnMobile");
+  pane.classList.add("show");
+
+  const draft = localStorage.getItem("hitup_draft_" + chatId);
+  if (draft) $("messageInput").value = draft;
+  $("messageInput").addEventListener("input", (e) => {
+    localStorage.setItem("hitup_draft_" + chatId, e.target.value);
+  });
+
+  $("composerForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = $("messageInput");
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    localStorage.removeItem("hitup_draft_" + chatId);
+    try {
+      await addDoc(collection(db, "chats", chatId, "messages"), {
+        text, senderId: username, status: "sent", createdAt: serverTimestamp()
+      });
+      await updateDoc(doc(db, "chats", chatId), {
+        lastMessage: text, lastMessageAt: serverTimestamp()
+      });
+    } catch (err) {
+      showBanner(friendlyError(err));
+      input.value = text;
+    }
+  });
+
+  if (msgUnsub) msgUnsub();
+  const mq = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt"));
+  msgUnsub = onSnapshot(mq, (snap) => {
+    const el = $("messagesEl");
+    if (!el) return;
+    el.innerHTML = "";
+    let lastDay = null;
+    snap.forEach(d => {
+      const m = d.data();
+      const created = m.createdAt?.toDate?.() || new Date();
+      const dayKey = created.toDateString();
+      if (dayKey !== lastDay){
+        const split = document.createElement("div");
+        split.className = "daySplit";
+        split.textContent = created.toDateString() === new Date().toDateString() ? "Today" : created.toLocaleDateString([], { month:"long", day:"numeric" });
+        el.appendChild(split);
+        lastDay = dayKey;
+      }
+      const out = m.senderId === username;
+      const bubble = document.createElement("div");
+      bubble.className = "bubble " + (out ? "out" : "in");
+      const tick = out ? `<span class="tick ${m.status === "seen" ? "seen" : ""} mono">${m.status === "seen" ? "✓✓" : "✓"}</span>` : "";
+      bubble.innerHTML = `${escapeHtml(m.text)}<div class="meta"><span class="mono">${formatTime(created)}</span>${tick}</div>`;
+      el.appendChild(bubble);
+      if (!out && m.status !== "seen"){
+        updateDoc(doc(db, "chats", chatId, "messages", d.id), { status: "seen" });
+      }
+    });
+    el.scrollTop = el.scrollHeight;
+  }, (err) => {
+    showBanner(friendlyError(err));
+  });
+}
+</script>
+</body>
+</html>
